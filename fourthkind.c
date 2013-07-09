@@ -7,13 +7,55 @@
 #define WIDTH 640
 #define HEIGHT 480
 
+#define BASEWEIGHT 1000
+
+struct vect {
+	int x, y;
+	struct vect *next;
+};
+
 struct node {
 	int x, y;
+	struct vect *head_vect;
 };
 
 SDL_Surface *screen;
 
 struct node me, you;
+
+void *xcalloc (unsigned int a, unsigned int b);
+char *xstrdup (const char *old);
+void step (struct node *np);
+void draw (void);
+void process_input (void);
+void add_weight (struct vect *vp, struct node *np);
+void init_node (struct node *np, int x, int y);
+
+void *
+xcalloc (unsigned int a, unsigned int b)
+{
+	void *p;
+
+	if ((p = calloc (a, b)) == NULL) {
+		fprintf (stderr, "memory error\n");
+		exit (1);
+	}
+
+	return (p);
+}
+
+char *
+xstrdup (const char *old)
+{
+	char *new;
+
+	if ((new = strdup (old)) == NULL) {
+		fprintf (stderr, "out of memory\n");
+		exit (1);
+	}
+
+	return (new);
+}
 
 void
 step (struct node *np)
@@ -63,16 +105,58 @@ process_input (void)
 	}
 }
 
+void
+add_weight (struct vect *vp0, struct node *np)
+{
+	struct vect *vp1;
+
+	vp1 = xcalloc (1, sizeof *vp1);
+
+	vp1->x = vp0->x;
+	vp1->y = vp0->y;
+
+	if (np->head_vect) {
+		vp1->next = np->head_vect;
+		np->head_vect = vp1;
+	} else {
+		np->head_vect = vp1;
+	}
+}
+
+void
+init_node (struct node *np, int x, int y)
+{
+	np->x = x;
+	np->y = y;
+}
+
 int
 main (int argc, char **argv)
 {
+	struct vect dirs[4];
+
 	srand (time (NULL));
 
-	me.x = WIDTH / 2;
-	me.y = HEIGHT / 2;
+	dirs[0].x = 1000;
+	dirs[0].y = 0;
+	dirs[1].x = 0;
+	dirs[1].y = -1000;
+	dirs[2].x = -1000;
+	dirs[2].y = 0;
+	dirs[3].x = 0;
+	dirs[3].y = 1000;
 
-	you.x = WIDTH / 4;
-	you.y = HEIGHT / 4;
+	init_node (&me, WIDTH / 2, HEIGHT / 2);
+	add_weight (&dirs[0], &me);
+	add_weight (&dirs[1], &me);
+	add_weight (&dirs[2], &me);
+	add_weight (&dirs[3], &me);
+
+	init_node (&you, WIDTH / 4, HEIGHT / 4);
+	add_weight (&dirs[0], &you);
+	add_weight (&dirs[1], &you);
+	add_weight (&dirs[2], &you);
+	add_weight (&dirs[3], &you);
 
 	if (SDL_Init (SDL_INIT_VIDEO) != 0) {
 		fprintf (stderr, "unable to initialize SDL: %s\n",
