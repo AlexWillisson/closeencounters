@@ -5,11 +5,24 @@
 #include <SDL.h>
 #include <SDL_gfxPrimitives.h>
 
-#define WIDTH 640
-#define HEIGHT 480
+#define SCREENWIDTH 640
+#define SCREENHEIGHT 480
+#define SCREENSCALE 10
 
-#define BASEWEIGHT 1000
-#define STEPSIZE 5
+#define WIDTH SCREENWIDTH*SCREENSCALE
+#define HEIGHT SCREENHEIGHT*SCREENSCALE
+
+#define BASEWEIGHT 500
+#define STEPSIZE 20
+#define SIDEPUSH 1000
+#define ATTRACTION 2000
+
+enum {
+	UP,
+	DOWN,
+	LEFT,
+	RIGHT,
+};
 
 struct vect {
 	double x, y;
@@ -21,21 +34,15 @@ struct weight {
 };
 
 struct node {
-	int x, y;
+	struct node *next;
+	struct vect pos;
 	struct weight *head_weight;
+	double color;
 };
 
 SDL_Surface *screen;
 
-struct node me, you;
-
-void *xcalloc (unsigned int a, unsigned int b);
-char *xstrdup (const char *old);
-void step (struct node *np);
-void draw (void);
-void process_input (void);
-void add_weight (struct weight *wp, struct node *np);
-void init_node (struct node *np, int x, int y);
+struct node *head_node;
 
 void *
 xcalloc (unsigned int a, unsigned int b)
@@ -81,41 +88,127 @@ vnorm (struct vect *vp1, struct vect *vp0)
 }
 
 void
-step (struct node *np)
+vsub (struct vect *vp2, struct vect *vp0, struct vect *vp1)
 {
-	double r, totalmag, chance;
-	struct weight *wp;
+	vp2->x = vp0->x - vp1->x;
+	vp2->y = vp0->y - vp1->y;
+}
+
+void
+step (struct node *np0)
+{
+	double r, totalmag, chance, attract;
+	struct node *np1;
+	struct weight *wp, cardinal[4], *sel, *head_extra;
 	struct vect v;
 
+	sel = NULL;
+
 	totalmag = 0;
-	for (wp = np->head_weight; wp; wp = wp->next) {
+	for (wp = np0->head_weight; wp; wp = wp->next) {
+		totalmag += hypot (wp->v.x, wp->v.y);
+	}
+
+	head_extra = &cardinal[UP];
+
+	cardinal[UP].v.x = 0;
+	cardinal[UP].v.y = (-np0->pos.y / HEIGHT) * SIDEPUSH;
+	cardinal[UP].step.x = 0;
+	cardinal[UP].step.y = -STEPSIZE;
+	cardinal[UP].next = &cardinal[DOWN];
+
+	cardinal[DOWN].v.x = 0;
+	cardinal[DOWN].v.y = ((HEIGHT - np0->pos.y) / HEIGHT) * SIDEPUSH;
+	cardinal[DOWN].step.x = 0;
+	cardinal[DOWN].step.y = STEPSIZE;
+	cardinal[DOWN].next = &cardinal[LEFT];
+
+	cardinal[LEFT].v.x = (-np0->pos.x / WIDTH) * SIDEPUSH;
+	cardinal[LEFT].v.y = 0;
+	cardinal[LEFT].step.x = -STEPSIZE;
+	cardinal[LEFT].step.y = 0;
+	cardinal[LEFT].next = &cardinal[RIGHT];
+
+	cardinal[RIGHT].v.x = ((WIDTH - np0->pos.x) / WIDTH) * SIDEPUSH;
+	cardinal[RIGHT].v.y = 0;
+	cardinal[RIGHT].step.x = STEPSIZE;
+	cardinal[RIGHT].step.y = 0;
+	cardinal[RIGHT].next = NULL;
+
+	for (np1 = head_node; np1; np1 = np1->next) {
+		if (np1 == np0)
+			continue;
+
+		wp = xcalloc (1, sizeof *wp);
+
+		vsub (&v, &np1->pos, &np0->pos);
+
+		if (hypot (v.x, v.y) < 50) {
+			attract = -STEPSIZE;
+		} else {
+			attract = STEPSIZE;
+		}
+
+		vnorm (&v, &v);
+		vscale (&wp->v, &v, ATTRACTION);
+		vscale (&wp->step, &v, attract);
+
+		wp->next = head_extra;
+		head_extra = wp;
+	}
+
+	for (wp = head_extra; wp; wp = wp->next) {
 		totalmag += hypot (wp->v.x, wp->v.y);
 	}
 
 	r = (double) rand () / RAND_MAX;
 	chance = 0;
 
-	for (wp = np->head_weight; wp; wp = wp->next) {
+	for (wp = np0->head_weight; wp; wp = wp->next) {
 		vscale (&v, &wp->v, 1 / totalmag);
 
 		chance += hypot (v.x, v.y);
 
-		if (r < chance)
+		if (r < chance) {
+			sel = wp;
 			break;
+		}
 	}
 
-	np->x += wp->step.x;
-	np->y += wp->step.y;
+	if (!sel) {
+		for (wp = head_extra; wp; wp = wp->next) {
+			vscale (&v, &wp->v, 1 / totalmag);
+
+			chance += hypot (v.x, v.y);
+
+			if (r < chance) {
+				sel = wp;
+				break;
+			}
+		}
+	}
+
+	if (sel) {
+		np0->pos.x += sel->step.x;
+		np0->pos.y += sel->step.y;
+	}
 }
 
 void
 draw (void)
 {
-	filledCircleColor (screen, me.x, me.y, 5, 0x00ff00ff);
-	aacircleColor (screen, me.x, me.y, 5, 0x00ff00ff);
+	struct node *np;
 
-	filledCircleColor (screen, you.x, you.y, 5, 0xff0000ff);
-	aacircleColor (screen, you.x, you.y, 5, 0xff0000ff);
+	for (np = head_node; np; np = np->next) {
+		filledCircleColor (screen, np->pos.x / SCREENSCALE,
+				   np->pos.y / SCREENSCALE, 5, np->color);
+		aacircleColor (screen, np->pos.x / SCREENSCALE,
+			       np->pos.y / SCREENSCALE, 5, np->color);
+		aacircleColor (screen, np->pos.x / SCREENSCALE,
+			       np->pos.y / SCREENSCALE, 50, np->color);
+		aacircleColor (screen, np->pos.x / SCREENSCALE,
+			       np->pos.y / SCREENSCALE, 200, np->color);
+	}
 }
 
 void
@@ -159,13 +252,6 @@ add_weight (struct weight *wp0, struct node *np)
 }
 
 void
-init_node (struct node *np, int x, int y)
-{
-	np->x = x;
-	np->y = y;
-}
-
-void
 build_weight (struct weight *wp, double x, double y, double str)
 {
 	struct vect v;
@@ -180,29 +266,45 @@ build_weight (struct weight *wp, double x, double y, double str)
 	wp->step.y = v.y;
 }
 
-int
-main (int argc, char **argv)
+void
+init_node (int x, int y, double color)
 {
 	struct weight dirs[4];
+	struct node *np;
 
-	srand (time (NULL));
+	np = xcalloc (1, sizeof *np);
 
 	build_weight (&dirs[0], 1000, 0, STEPSIZE);
 	build_weight (&dirs[1], 0, -1000, STEPSIZE);
 	build_weight (&dirs[2], -1000, 0, STEPSIZE);
 	build_weight (&dirs[3], 0, 1000, STEPSIZE);
 
-	init_node (&me, WIDTH / 2, HEIGHT / 2);
-	add_weight (&dirs[0], &me);
-	add_weight (&dirs[1], &me);
-	add_weight (&dirs[2], &me);
-	add_weight (&dirs[3], &me);
+	np->pos.x = x;
+	np->pos.y = y;
+	np->color = color;
 
-	init_node (&you, WIDTH / 4, HEIGHT / 4);
-	add_weight (&dirs[0], &you);
-	add_weight (&dirs[1], &you);
-	add_weight (&dirs[2], &you);
-	add_weight (&dirs[3], &you);
+	add_weight (&dirs[0], np);
+	add_weight (&dirs[1], np);
+	add_weight (&dirs[2], np);
+	add_weight (&dirs[3], np);
+
+	if (head_node) {
+		np->next = head_node;
+		head_node = np;
+	} else {
+		head_node = np;
+	}
+}
+
+int
+main (int argc, char **argv)
+{
+	struct node *np;
+
+	srand (time (NULL));
+
+	init_node (WIDTH / 2, HEIGHT / 2, 0x00ff00ff);
+	init_node (WIDTH / 4, HEIGHT / 4, 0xff0000ff);
 
 	if (SDL_Init (SDL_INIT_VIDEO) != 0) {
 		fprintf (stderr, "unable to initialize SDL: %s\n",
@@ -210,14 +312,17 @@ main (int argc, char **argv)
 		return (1);
 	}
 
-	screen = SDL_SetVideoMode (WIDTH, HEIGHT, 32,
+	screen = SDL_SetVideoMode (SCREENWIDTH, SCREENHEIGHT, 32,
 				   SDL_HWSURFACE | SDL_DOUBLEBUF);
 
 	while (1) {
 		process_input ();
 		SDL_FillRect (screen, NULL, 0x000000);
-		step (&me);
-		step (&you);
+
+		for (np = head_node; np; np = np->next) {
+			step (np);
+		}
+
 		draw ();
 		SDL_Flip (screen);
 		SDL_Delay (10);
