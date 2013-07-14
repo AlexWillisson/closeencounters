@@ -1,6 +1,7 @@
-#include <stdio.h>
+ #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <math.h>
 #include <SDL.h>
 #include <SDL_gfxPrimitives.h>
 
@@ -8,15 +9,20 @@
 #define HEIGHT 480
 
 #define BASEWEIGHT 1000
+#define STEPSIZE 5
 
 struct vect {
-	int x, y;
-	struct vect *next;
+	double x, y;
+};
+
+struct weight {
+	struct weight *next;
+	struct vect v, step;
 };
 
 struct node {
 	int x, y;
-	struct vect *head_vect;
+	struct weight *head_weight;
 };
 
 SDL_Surface *screen;
@@ -28,7 +34,7 @@ char *xstrdup (const char *old);
 void step (struct node *np);
 void draw (void);
 void process_input (void);
-void add_weight (struct vect *vp, struct node *np);
+void add_weight (struct weight *wp, struct node *np);
 void init_node (struct node *np, int x, int y);
 
 void *
@@ -58,21 +64,48 @@ xstrdup (const char *old)
 }
 
 void
+vscale (struct vect *vp1, struct vect *vp0, double s)
+{
+	vp1->x = vp0->x * s;
+	vp1->y = vp0->y * s;
+}
+
+void
+vnorm (struct vect *vp1, struct vect *vp0)
+{
+	double mag;
+
+	mag = hypot (vp0->x, vp0->y);
+
+	vscale (vp1, vp0, 1 / mag);
+}
+
+void
 step (struct node *np)
 {
-	int r;
+	double r, totalmag, chance;
+	struct weight *wp;
+	struct vect v;
 
-	r = rand () % 4000;
-
-	if (r < 1000) {
-		np->x += 1;
-	} else if (r >= 1000 && r < 2000) {
-		np->y += 1;
-	} else if (r >= 2000 && r <= 3000) {
-		np->x -= 1;
-	} else if (r >= 3000 && r <= 4000) {
-		np->y -= 1;
+	totalmag = 0;
+	for (wp = np->head_weight; wp; wp = wp->next) {
+		totalmag += hypot (wp->v.x, wp->v.y);
 	}
+
+	r = (double) rand () / RAND_MAX;
+	chance = 0;
+
+	for (wp = np->head_weight; wp; wp = wp->next) {
+		vscale (&v, &wp->v, 1 / totalmag);
+
+		chance += hypot (v.x, v.y);
+
+		if (r < chance)
+			break;
+	}
+
+	np->x += wp->step.x;
+	np->y += wp->step.y;
 }
 
 void
@@ -106,20 +139,22 @@ process_input (void)
 }
 
 void
-add_weight (struct vect *vp0, struct node *np)
+add_weight (struct weight *wp0, struct node *np)
 {
-	struct vect *vp1;
+	struct weight *wp1;
 
-	vp1 = xcalloc (1, sizeof *vp1);
+	wp1 = xcalloc (1, sizeof *wp1);
 
-	vp1->x = vp0->x;
-	vp1->y = vp0->y;
+	wp1->v.x = wp0->v.x;
+	wp1->v.y = wp0->v.y;
+	wp1->step.x = wp0->step.x;
+	wp1->step.y = wp0->step.y;
 
-	if (np->head_vect) {
-		vp1->next = np->head_vect;
-		np->head_vect = vp1;
+	if (np->head_weight) {
+		wp1->next = np->head_weight;
+		np->head_weight = wp1;
 	} else {
-		np->head_vect = vp1;
+		np->head_weight = wp1;
 	}
 }
 
@@ -130,21 +165,32 @@ init_node (struct node *np, int x, int y)
 	np->y = y;
 }
 
+void
+build_weight (struct weight *wp, double x, double y, double str)
+{
+	struct vect v;
+
+	wp->v.x = x;
+	wp->v.y = y;
+
+	vnorm (&v, &wp->v);
+	vscale (&v, &v, str);
+
+	wp->step.x = v.x;
+	wp->step.y = v.y;
+}
+
 int
 main (int argc, char **argv)
 {
-	struct vect dirs[4];
+	struct weight dirs[4];
 
 	srand (time (NULL));
 
-	dirs[0].x = 1000;
-	dirs[0].y = 0;
-	dirs[1].x = 0;
-	dirs[1].y = -1000;
-	dirs[2].x = -1000;
-	dirs[2].y = 0;
-	dirs[3].x = 0;
-	dirs[3].y = 1000;
+	build_weight (&dirs[0], 1000, 0, STEPSIZE);
+	build_weight (&dirs[1], 0, -1000, STEPSIZE);
+	build_weight (&dirs[2], -1000, 0, STEPSIZE);
+	build_weight (&dirs[3], 0, 1000, STEPSIZE);
 
 	init_node (&me, WIDTH / 2, HEIGHT / 2);
 	add_weight (&dirs[0], &me);
