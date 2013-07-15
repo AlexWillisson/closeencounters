@@ -13,6 +13,7 @@
 #define HEIGHT SCREENHEIGHT*SCREENSCALE
 
 #define BASEWEIGHT 500
+#define BASEPULL 20
 #define STEPSIZE 20
 #define SIDEPUSH 1000
 #define ATTRACTION 2000
@@ -33,10 +34,17 @@ struct weight {
 	struct vect v, step;
 };
 
+struct attract {
+	struct attract *next;
+	struct node *np;
+	double pull, attract;
+};
+
 struct node {
 	struct node *next;
 	struct vect pos;
 	struct weight *head_weight;
+	struct attract *head_attract;
 	double color;
 };
 
@@ -80,11 +88,7 @@ vscale (struct vect *vp1, struct vect *vp0, double s)
 void
 vnorm (struct vect *vp1, struct vect *vp0)
 {
-	double mag;
-
-	mag = hypot (vp0->x, vp0->y);
-
-	vscale (vp1, vp0, 1 / mag);
+	vscale (vp1, vp0, 1 / hypot (vp0->x, vp0->y));
 }
 
 void
@@ -97,10 +101,11 @@ vsub (struct vect *vp2, struct vect *vp0, struct vect *vp1)
 void
 step (struct node *np0)
 {
-	double r, totalmag, chance, attract;
-	struct node *np1;
+	double r, totalmag, chance, pull;
+	/* struct node *np1; */
 	struct weight *wp, cardinal[4], *sel, *head_extra;
 	struct vect v;
+	struct attract *ap;
 
 	sel = NULL;
 
@@ -135,23 +140,20 @@ step (struct node *np0)
 	cardinal[RIGHT].step.y = 0;
 	cardinal[RIGHT].next = NULL;
 
-	for (np1 = head_node; np1; np1 = np1->next) {
-		if (np1 == np0)
-			continue;
-
+	for (ap = np0->head_attract; ap; ap = ap->next) {
 		wp = xcalloc (1, sizeof *wp);
 
-		vsub (&v, &np1->pos, &np0->pos);
+		vsub (&v, &ap->np->pos, &np0->pos);
 
 		if (hypot (v.x, v.y) < 50) {
-			attract = -STEPSIZE;
+			pull = -ap->pull;
 		} else {
-			attract = STEPSIZE;
+			pull = ap->pull;
 		}
 
 		vnorm (&v, &v);
-		vscale (&wp->v, &v, ATTRACTION);
-		vscale (&wp->step, &v, attract);
+		vscale (&wp->v, &v, ap->attract);
+		vscale (&wp->step, &v, pull);
 
 		wp->next = head_extra;
 		head_extra = wp;
@@ -296,6 +298,33 @@ init_node (int x, int y, double color)
 	}
 }
 
+void
+build_attract (void)
+{
+	struct node *np0, *np1;
+	struct attract *ap;
+
+	for (np0 = head_node; np0; np0 = np0->next) {
+		for (np1 = head_node; np1; np1 = np1->next) {
+			if (np1 == np0)
+				continue;
+
+			ap = xcalloc (1, sizeof *ap);
+
+			ap->np = np1;
+			ap->pull = BASEPULL;
+			ap->attract = ATTRACTION;
+
+			if (np0->head_attract) {
+				ap->next = np0->head_attract;
+				np0->head_attract = ap;
+			} else {
+				np0->head_attract = ap;
+			}
+		}
+	}
+}
+
 int
 main (int argc, char **argv)
 {
@@ -304,7 +333,10 @@ main (int argc, char **argv)
 	srand (time (NULL));
 
 	init_node (WIDTH / 2, HEIGHT / 2, 0x00ff00ff);
-	init_node (WIDTH / 4, HEIGHT / 4, 0xff0000ff);
+	init_node (WIDTH / 2, HEIGHT / 4, 0xff0000ff);
+	init_node (WIDTH / 4, HEIGHT / 2, 0x0000ffff);
+
+	build_attract ();
 
 	if (SDL_Init (SDL_INIT_VIDEO) != 0) {
 		fprintf (stderr, "unable to initialize SDL: %s\n",

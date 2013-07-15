@@ -5,4 +5,4 @@ fourthkind: fourthkind.o
 	$(CC) $(CFLAGS) -o fourthkind fourthkind.o $(LIBS)
 
 clean:
-	rm -f *~ *.o
+	rm -f *~ *.o fourthkind
